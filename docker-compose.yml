@@ -1,0 +1,174 @@
+name: backup-resilience-lab
+
+# NOTE (Oct 2026): MinIO removed minio/minio + minio/mc from Docker Hub (Sep 2026).
+# This lab uses RustFS (Apache-2.0, S3-compatible, versioning + Object Lock WORM)
+# as a drop-in replacement, and amazon/aws-cli instead of `mc`.
+# Service name stays `minio` so S3_ENDPOINT=http://minio:9000 is unchanged.
+# See docs/ARCHITECTURE.md for the substitution rationale.
+
+services:
+  minio:
+    image: rustfs/rustfs:1.0.1
+    command: []
+    environment:
+      RUSTFS_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      RUSTFS_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin123}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    networks:
+      - lab-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9000/minio/health/live || curl -sf http://localhost:9000/minio/health/ready || curl -sf http://localhost:9000/ || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+
+  minio-init:
+    image: amazon/aws-cli:2.27.0
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      export AWS_ACCESS_KEY_ID=$$MINIO_ROOT_USER AWS_SECRET_ACCESS_KEY=$$MINIO_ROOT_PASSWORD AWS_EC2_METADATA_DISABLED=true;
+      EP=http://minio:9000;
+      aws --endpoint-url $$EP s3 mb s3://backup-primary || true;
+      aws --endpoint-url $$EP s3api put-bucket-versioning --bucket backup-primary --versioning-configuration Status=Enabled || true;
+      aws --endpoint-url $$EP s3api create-bucket --bucket backup-vault --object-lock-enabled-for-bucket || aws --endpoint-url $$EP s3 mb s3://backup-vault || true;
+      aws --endpoint-url $$EP s3api put-bucket-versioning --bucket backup-vault --versioning-configuration Status=Enabled || true;
+      aws --endpoint-url $$EP s3api put-object-lock-configuration --bucket backup-vault --object-lock-configuration '{\"ObjectLockEnabled\":\"Enabled\",\"Rule\":{\"DefaultRetention\":{\"Mode\":\"GOVERNANCE\",\"Days\":1}}}' || true;
+      aws --endpoint-url $$EP s3 ls || true;
+      echo INIT-DONE;
+      "
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin123}
+    networks:
+      - lab-net
+
+  vault-sync:
+    image: amazon/aws-cli:2.27.0
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+    entrypoint: >
+      /bin/sh -c "
+      export AWS_ACCESS_KEY_ID=$$MINIO_ROOT_USER AWS_SECRET_ACCESS_KEY=$$MINIO_ROOT_PASSWORD AWS_EC2_METADATA_DISABLED=true;
+      EP=http://minio:9000;
+      while true; do aws --endpoint-url $$EP s3 sync s3://backup-primary s3://backup-vault || true; sleep $${VAULT_SYNC_SECONDS:-60}; done
+      "
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin123}
+      VAULT_SYNC_SECONDS: ${VAULT_SYNC_SECONDS:-60}
+    networks:
+      - lab-net
+
+  app-server-1:
+    build:
+      context: .
+      dockerfile: docker/agent/Dockerfile
+    image: backup-lab-agent:1.0
+    hostname: app-server-1
+    environment:
+      LAB_HOST: app-server-1
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin123}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin123}
+      RESTIC_PASSWORD: ${RESTIC_PASSWORD:-lab-restic-secret-change-me}
+      S3_ENDPOINT: http://minio:9000
+    ports:
+      - "8001:8000"
+    volumes:
+      - data1:/data
+      - logs:/var/log/lab
+      - labstate1:/var/lib/lab
+      - ./config:/app/config:ro
+    tmpfs:
+      - /cache:size=64m
+    cap_add:
+      - NET_ADMIN
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+    networks:
+      - lab-net
+
+  app-server-2:
+    build:
+      context: .
+      dockerfile: docker/agent/Dockerfile
+    image: backup-lab-agent:1.0
+    hostname: app-server-2
+    environment:
+      LAB_HOST: app-server-2
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin123}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin123}
+      RESTIC_PASSWORD: ${RESTIC_PASSWORD:-lab-restic-secret-change-me}
+      S3_ENDPOINT: http://minio:9000
+    ports:
+      - "8002:8000"
+    volumes:
+      - data2:/data
+      - logs:/var/log/lab
+      - labstate2:/var/lib/lab
+      - ./config:/app/config:ro
+    tmpfs:
+      - /cache:size=64m
+    cap_add:
+      - NET_ADMIN
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+    networks:
+      - lab-net
+
+  prometheus:
+    image: prom/prometheus:v3.3.0
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+    networks:
+      - lab-net
+    depends_on:
+      - app-server-1
+      - app-server-2
+
+  grafana:
+    image: grafana/grafana:11.5.2
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-labgrafana123}
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks:
+      - lab-net
+    depends_on:
+      - prometheus
+
+volumes:
+  minio-data:
+  data1:
+  data2:
+  logs:
+  labstate1:
+  labstate2:
+
+networks:
+  lab-net:
+    driver: bridge

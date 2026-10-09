@@ -1,0 +1,81 @@
+# Triage classification rules (spec Section 12). Case-insensitive regex over message+raw.
+- id: STORAGE_DISK_FULL
+  category: storage
+  severity: P2
+  match: ["no space left on device", "disk quota exceeded"]
+  cause: "Local cache or volume is out of space"
+  checks: ["df -h", "du -sh /cache /data"]
+  fix: "Free space or enlarge the volume, then rerun the backup"
+  route: "Support L1 - self-resolve with runbook"
+
+- id: DNS_FAILURE
+  category: dns
+  severity: P2
+  match: ["no such host", "name resolution.*fail", "lookup minio.*timeout", "temporary failure in name resolution", "could not resolve"]
+  cause: "DNS resolver cannot resolve MinIO hostname"
+  checks: ["cat /etc/resolv.conf", "dig minio", "getent hosts minio"]
+  fix: "Restore /etc/resolv.conf, check Docker DNS, verify lab-net network"
+  route: "Support L1 - network runbook"
+
+- id: NETWORK_PORT_BLOCKED
+  category: network
+  severity: P2
+  match: ["i/o timeout", "connection timed out", "dial tcp.*9000", "network is unreachable"]
+  cause: "Egress to object storage port 9000 blocked (iptables or network disconnect)"
+  checks: ["iptables -L OUTPUT -n -v", "nc -vz minio 9000", "ss -tnp"]
+  fix: "Remove iptables DROP rule or reconnect container to lab-net"
+  route: "Support L1 - network runbook"
+
+- id: PERMISSIONS
+  category: permissions
+  severity: P2
+  match: ["permission denied"]
+  cause: "Agent (non-root labuser) cannot read data directory"
+  checks: ["ls -l /data/victim", "namei -l /data/victim/finance", "id labuser"]
+  fix: "Fix mode/ownership (chmod/chown), then rerun backup"
+  route: "Support L1 - self-resolve with runbook"
+
+- id: AUTH_S3
+  category: auth
+  severity: P2
+  match: ["AccessDenied", "Access Denied", "SignatureDoesNotMatch", "InvalidAccessKeyId"]
+  cause: "Wrong S3 credentials for MinIO"
+  checks: ["env | grep -i aws", "env | grep -i minio", "mc alias list"]
+  fix: "Rotate or correct AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY"
+  route: "Support L1 - auth runbook"
+
+- id: AUTH_REPO_PASSWORD
+  category: auth
+  severity: P2
+  match: ["wrong password or no key found", "ciphertext verification failed", "unable to open key file"]
+  cause: "Wrong restic repository password"
+  checks: ["env | grep RESTIC_PASSWORD", "restic snapshots --json 2>&1 | head"]
+  fix: "Restore correct RESTIC_PASSWORD from vault/secret store"
+  route: "Support L2 - secrets handling"
+
+- id: SERVICE_DOWN
+  category: service
+  severity: P1
+  match: ["connection refused", "dial tcp.*connect.*refused", "endpoint.*not reachable", "server is not running"]
+  cause: "MinIO object storage service is down"
+  checks: ["docker compose ps minio", "curl -f http://minio:9000/minio/health/live", "docker compose logs minio | tail"]
+  fix: "Start service (docker compose up -d minio), check health endpoint and volume"
+  route: "Support L2 - storage oncall"
+
+- id: RANSOMWARE_ALERT
+  category: ransomware
+  severity: P1
+  match: ["alert_raised", "ransomware.*detected", "detector score.*above threshold"]
+  cause: "Behavioural detector flagged mass-encryption pattern"
+  checks: ["lab detector status", "ls -l /data/victim | head", "grep alert_raised /var/log/lab/*.jsonl | tail"]
+  fix: "Pause backups, verify alert, run lab restore --latest-clean"
+  route: "Security IR - P1 page"
+
+- id: UNKNOWN
+  category: unknown
+  severity: P3
+  match: [".*"]
+  cause: "Unclassified failure - needs human review"
+  checks: ["tail -50 /var/log/lab/backup.jsonl", "df -h", "curl -f http://minio:9000/minio/health/live"]
+  fix: "Attach raw logs and escalate to L2"
+  route: "Support L2 with raw logs attached"

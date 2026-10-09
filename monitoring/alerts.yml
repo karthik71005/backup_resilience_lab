@@ -1,0 +1,17 @@
+groups:
+  - name: lab
+    rules:
+      - alert: SnapshotTooOld
+        expr: (time() - lab_backup_last_success_timestamp) > 600
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "No successful backup for >10m on {{ $labels.host }}"
+      - alert: RansomwareAlert
+        expr: increase(lab_alerts_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Ransomware alert fired on {{ $labels.host }}"

@@ -1,0 +1,39 @@
+{
+  "title": "Backup Resilience Lab",
+  "uid": "lab-overview",
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "panels": [
+    {
+      "id": 1, "type": "stat", "title": "Snapshot age (s)",
+      "targets": [{"expr": "time() - lab_backup_last_success_timestamp"}],
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0}
+    },
+    {
+      "id": 2, "type": "timeseries", "title": "Backup success/failures",
+      "targets": [{"expr": "increase(lab_backup_failures_total[5m])"}],
+      "gridPos": {"h": 8, "w": 12, "x": 6, "y": 0}
+    },
+    {
+      "id": 3, "type": "timeseries", "title": "Detector score (threshold 0.55)",
+      "targets": [{"expr": "lab_detector_score"}, {"expr": "0.55"}],
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+    },
+    {
+      "id": 4, "type": "timeseries", "title": "Clean vs suspect snapshots",
+      "targets": [{"expr": "lab_snapshots_total"}],
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+    },
+    {
+      "id": 5, "type": "timeseries", "title": "Repo size (bytes)",
+      "targets": [{"expr": "lab_repo_size_bytes"}],
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}
+    },
+    {
+      "id": 6, "type": "stat", "title": "Last RTO (s)",
+      "targets": [{"expr": "lab_last_restore_rto_seconds"}],
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 16}
+    }
+  ]
+}

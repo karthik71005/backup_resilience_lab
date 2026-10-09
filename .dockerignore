@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.env
+cases/CASE-*.json
+cases/CASE-*.md
+*.db
+*.sqlite3
+/restore/

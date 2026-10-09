@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lab"
+version = "1.0.0"
+description = "Backup Resilience Lab"
+requires-python = ">=3.11"
+dependencies = [
+  "boto3==1.34.162",
+  "typer==0.12.5",
+  "click==8.1.8",
+  "pyyaml==6.0.2",
+  "prometheus_client==0.21.1",
+  "watchdog==4.0.2",
+  "cryptography==43.0.3",
+  "rich==13.9.4",
+]
+
+[project.scripts]
+lab = "lab.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]

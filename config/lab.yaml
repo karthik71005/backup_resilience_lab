@@ -1,0 +1,40 @@
+# Lab configuration — all tunables live here (spec Section 8).
+host: "app-server-1"
+data_dir: "/data"
+victim_dir: "/data/victim"
+log_dir: "/var/log/lab"
+state_db: "/var/lib/lab/state.db"
+restore_base: "/restore"
+
+s3_endpoint: "http://minio:9000"
+primary_bucket: "backup-primary"
+vault_bucket: "backup-vault"
+manifest_prefix: "manifests"
+
+backup_interval_seconds: 120
+backup_check_every_n: 5
+vault_sync_seconds: 60
+
+# Detection
+window_seconds: 10
+score_threshold: 0.55
+consecutive_windows: 2
+safety_margin_seconds: 5
+weights:
+  mod_rate: 0.35
+  high_entropy_ratio: 0.35
+  ext_change: 0.20
+  note_files: 0.10
+mod_rate_norm: 50.0
+ext_change_norm: 10.0
+entropy_high: 7.5
+entropy_baseline_low: 7.0
+entropy_jump_min: 1.5
+anomaly_defer_score: 0.3
+
+# Simulator defaults
+sim_rate_files_per_sec: 15.0
+sim_delay_seconds: 2.0
+
+# Triage severity
+p1_no_backup_intervals: 3
