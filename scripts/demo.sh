@@ -34,3 +34,5 @@ docker network connect backup-resilience-lab_lab-net backup-resilience-lab-app-s
 docker compose exec app-server-1 python3 -m lab.cli fault clear dns_failure
 docker compose exec app-server-1 python3 -m lab.cli backup run
 echo "Demo complete. Grafana: http://localhost:3000  Prometheus: http://localhost:9090"
+echo "NOTE: after the attack segment backups are PAUSED by design; when done demonstrating, run:"
+echo "  docker compose exec app-server-1 python3 -m lab.cli backup resume"

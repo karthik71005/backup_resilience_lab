@@ -46,6 +46,21 @@ def backup_loop():
     from .backup import loop
     loop()
 
+@backup_app.command("resume")
+def backup_resume():
+    """Unpause scheduled backups after an alert has been handled (verify + restore first)."""
+    cfg = load_config()
+    from . import state as st
+    from .logging_setup import get_logger
+    st.set_paused(cfg.state_db, False)
+    get_logger("backup", log_dir=cfg.log_dir, host=cfg.host).warning("backups_resumed", "operator resumed scheduled backups")
+    try:
+        from .exporter import set_paused
+        set_paused(False)
+    except Exception:
+        pass
+    print("backups resumed")
+
 @vault_app.command("status")
 def vault_status():
     from .vault import vault_status as vs
