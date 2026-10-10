@@ -2,9 +2,7 @@
 
 A lab-scale backup & recovery platform with an immutable vault, a
 behavioural ransomware detector, and a support triage tool that turns
-failure logs into structured cases. Built for a Cohesity TSE interview;
-it models Cohesity ideas (DataProtect, FortKnox-style immutability) — it
-is not their product.
+failure logs into structured cases. 
 
 ## Architecture
 
