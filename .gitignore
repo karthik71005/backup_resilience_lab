@@ -14,11 +14,18 @@ __pycache__/
 *.db
 *.sqlite3
 *.log
+*.jsonl
+
+# Lab runtime artefacts (never commit: secrets, keys, restored data)
+sim_key_*.key
+/restore/
+*.key
 
 # Test and coverage output
 .pytest_cache/
 .coverage
 htmlcov/
+.mypy_cache/
 
 # OS and editor files
 .DS_Store
