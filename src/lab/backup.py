@@ -15,6 +15,14 @@ from . import state as st
 def _env(cfg, extra: dict | None = None) -> dict:
     e = os.environ.copy()
     e.setdefault("RESTIC_REPOSITORY", f"s3:{cfg.s3_endpoint}/{cfg.primary_bucket}/{cfg.host}")
+    # restic cache lives on the /cache tmpfs (spec Section 5/11: disk_full fault target)
+    e.setdefault("XDG_CACHE_HOME", "/cache")
+    e.setdefault("TMPDIR", "/cache")
+    # fault-injection flags (set by `lab fault inject`, cleared by `clear`)
+    if Path("/tmp/lab_bad_creds").exists():
+        e["AWS_SECRET_ACCESS_KEY"] = "wrong-secret-injected"
+    if Path("/tmp/lab_bad_repo_pw").exists():
+        e["RESTIC_PASSWORD"] = "wrong-password-injected"
     # restic S3 vars
     if "AWS_ACCESS_KEY_ID" not in e and "MINIO_ROOT_USER" in e:
         e["AWS_ACCESS_KEY_ID"] = e["MINIO_ROOT_USER"]
@@ -42,6 +50,23 @@ def run_backup(cfg=None, log_dir=None, data_dir=None) -> dict:
     if st.is_paused(cfg.state_db):
         log.info("backup_skipped", "Backups paused, skipping run")
         return {"skipped": True}
+    # preflight: refuse to start when the restic scratch space (/cache tmpfs)
+    # is nearly full. Oct 2026 note: at lab data scale restic itself tolerates
+    # a 95%-full cache, so the disk_full fault would otherwise be silent; real
+    # agents gate on free space, and the refusal log line (with real df
+    # numbers) is what triage classifies as STORAGE_DISK_FULL.
+    try:
+        import shutil
+        min_free_mb = float(getattr(cfg, "min_cache_free_mb", 10))
+        free_mb = shutil.disk_usage("/cache").free / (1024 * 1024)
+        if free_mb < min_free_mb:
+            msg = f"no space left on device: /cache has {free_mb:.1f}MB free, need {min_free_mb:.0f}MB"
+            log.error("backup_failed", msg, exit_code=28, raw=msg)
+            return {"ok": False, "exit_code": 28, "stderr": msg}
+    except SystemExit:
+        raise
+    except Exception:
+        pass
     # anomaly deferral (Oct 2026): do not snapshot -- or relearn baselines --
     # while the detector score is elevated; a mid-attack backup would record
     # dirty data as clean and poison entropy baselines, suppressing detection.
@@ -55,8 +80,9 @@ def run_backup(cfg=None, log_dir=None, data_dir=None) -> dict:
                     score=cur_score)
         return {"skipped": True, "deferred": True, "score": cur_score}
     ddir = data_dir or cfg.data_dir
-    # 1. manifest
+    # 1. manifest (also records unreadable paths with error=permission_denied)
     manifest = build_manifest(ddir)
+    denied = [e["path"] for e in manifest["files"] if e.get("error") == "permission_denied"]
     # 2. restic backup
     env = _env(cfg)
     # ensure repo init (idempotent)
@@ -65,8 +91,13 @@ def run_backup(cfg=None, log_dir=None, data_dir=None) -> dict:
     proc = subprocess.run(cmd, env=env, capture_output=True, text=True)
     dur = time.time() - t0
     if proc.returncode != 0:
-        log.error("backup_failed", f"restic backup failed after {dur:.1f}s",
-                  exit_code=proc.returncode, raw=(proc.stderr or "")[-4000:], duration_s=round(dur, 2))
+        # restic --json suppresses human-readable causes; enrich from our own
+        # manifest walk so triage sees the real reason (e.g. permission denied).
+        detail = ""
+        if denied:
+            detail = f" permission denied: {', '.join(denied[:5])}" + ("..." if len(denied) > 5 else "")
+        log.error("backup_failed", f"restic backup failed after {dur:.1f}s.{detail}",
+                  exit_code=proc.returncode, raw=((proc.stderr or "") + detail)[-4000:], duration_s=round(dur, 2))
         try:
             cur = int(st.get_flag(cfg.state_db, "backup_failures", "0") or 0)
             st.set_flag(cfg.state_db, "backup_failures", str(cur + 1))
@@ -91,25 +122,35 @@ def run_backup(cfg=None, log_dir=None, data_dir=None) -> dict:
     if not snap_id:
         snap_id = f"manual-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
     taken_at = datetime.now(timezone.utc).isoformat()
+    # partial snapshot? restic may exit 0 with warnings on unreadable files
+    # (permission_denied fault), or its --json errors may hide the cause.
+    # Our manifest walk is the ground truth for unreadable paths.
+    incomplete = ("permission denied" in ((proc.stderr or "").lower())) or bool(denied)
+    status = "suspect" if incomplete else "clean"
+    if incomplete:
+        log.warning("backup_partial", "snapshot incomplete: permission denied on some paths; recorded as suspect, not clean",
+                    snapshot_id=snap_id, raw=(proc.stderr or "")[-2000:])
     # 3. upload manifest
     try:
         _upload_manifest_s3(cfg, manifest, snap_id)
     except Exception as e:
         log.warning("manifest_upload_failed", f"manifest upload failed: {e}", raw=str(e)[:2000])
     # 4. sqlite
-    st.insert_snapshot(cfg.state_db, snap_id, cfg.host, taken_at, "clean", manifest["count"], manifest["bytes"])
-    # 5. update baselines only after clean backup
+    st.insert_snapshot(cfg.state_db, snap_id, cfg.host, taken_at, status, manifest["count"], manifest["bytes"])
+    # 5. update baselines only after a genuinely clean backup (never from
+    # partial/suspect snapshots, never while deferred/paused)
     from .features import file_entropy
     root = Path(ddir)
     seen = set()
-    for ent in manifest["files"]:
-        if ent.get("sha256"):
-            seen.add(ent["path"])
-            try:
-                e = file_entropy(root / ent["path"])
-                st.upsert_baseline(cfg.state_db, ent["path"], e)
-            except Exception:
-                pass
+    if status == "clean":
+        for ent in manifest["files"]:
+            if ent.get("sha256"):
+                seen.add(ent["path"])
+                try:
+                    e = file_entropy(root / ent["path"])
+                    st.upsert_baseline(cfg.state_db, ent["path"], e)
+                except Exception:
+                    pass
     # prune baselines for files that no longer exist (bounded table, no stale paths).
     # Guard: never prune on an empty manifest (could be a fault, not deletions).
     try:

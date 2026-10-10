@@ -1,0 +1,30 @@
+{
+  "id": "CASE-20261010-007",
+  "title": "SERVICE: MinIO object storage service is down (SERVICE_DOWN)",
+  "severity": "P1",
+  "category": "service",
+  "rule_id": "SERVICE_DOWN",
+  "affected_host": "app-server-1",
+  "first_occurrence": "2026-10-10T15:56:08.126947+00:00",
+  "last_occurrence": "2026-10-10T15:56:08.126947+00:00",
+  "occurrence_count": 1,
+  "environment": {
+    "os": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+    "restic": "unknown",
+    "image": "backup-resilience-lab/agent:1.0"
+  },
+  "symptom": [
+    "Fatal: unable to open config file: Stat: Get \"http://minio:9000/backup-primary/?location=\": dial tcp: lookup minio on 127.0.0.11:53: no such host\nIs there a repository at the following location?\ns3:http://minio:9000/backup-primary/app-server-1\n"
+  ],
+  "checks_performed": [
+    "docker compose ps minio",
+    "curl -f http://minio:9000/minio/health/live",
+    "docker compose logs minio | tail"
+  ],
+  "probable_cause": "MinIO object storage service is down",
+  "recommended_fix": "Start service (docker compose up -d minio), check health endpoint and volume",
+  "escalation_route": "Support L2 - storage oncall",
+  "status": "open",
+  "customer_update": "We detected 1 occurrence(s) of MinIO object storage service is down on app-server-1. Our team is applying the documented fix and will confirm the next successful backup. No action is needed from you right now.",
+  "source_log": "/tmp/f7.jsonl"
+}

@@ -11,7 +11,7 @@
 - id: DNS_FAILURE
   category: dns
   severity: P2
-  match: ["no such host", "name resolution.*fail", "lookup minio.*timeout", "temporary failure in name resolution", "could not resolve"]
+  match: ["name resolution.*fail", "lookup minio.*timeout", "lookup minio on", "server misbehaving", "temporary failure in name resolution", "could not resolve"]
   cause: "DNS resolver cannot resolve MinIO hostname"
   checks: ["cat /etc/resolv.conf", "dig minio", "getent hosts minio"]
   fix: "Restore /etc/resolv.conf, check Docker DNS, verify lab-net network"
@@ -38,7 +38,7 @@
 - id: AUTH_S3
   category: auth
   severity: P2
-  match: ["AccessDenied", "Access Denied", "SignatureDoesNotMatch", "InvalidAccessKeyId"]
+  match: ["AccessDenied", "Access Denied", "SignatureDoesNotMatch", "signature.*does not match", "check your AWS secret access key", "InvalidAccessKeyId"]
   cause: "Wrong S3 credentials for MinIO"
   checks: ["env | grep -i aws", "env | grep -i minio", "mc alias list"]
   fix: "Rotate or correct AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY"
@@ -56,7 +56,7 @@
 - id: SERVICE_DOWN
   category: service
   severity: P1
-  match: ["connection refused", "dial tcp.*connect.*refused", "endpoint.*not reachable", "server is not running"]
+  match: ["connection refused", "dial tcp.*connect.*refused", "no such host", "endpoint.*not reachable", "server is not running"]
   cause: "MinIO object storage service is down"
   checks: ["docker compose ps minio", "curl -f http://minio:9000/minio/health/live", "docker compose logs minio | tail"]
   fix: "Start service (docker compose up -d minio), check health endpoint and volume"

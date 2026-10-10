@@ -37,6 +37,7 @@ class LabConfig:
     entropy_baseline_low: float = 7.0
     entropy_jump_min: float = 1.5
     anomaly_defer_score: float = 0.3
+    min_cache_free_mb: float = 10.0
     sim_rate_files_per_sec: float = 15.0
     sim_delay_seconds: float = 2.0
     p1_no_backup_intervals: int = 3

@@ -1,0 +1,30 @@
+{
+  "id": "CASE-20261010-005",
+  "title": "AUTH: Wrong S3 credentials for MinIO (AUTH_S3)",
+  "severity": "P2",
+  "category": "auth",
+  "rule_id": "AUTH_S3",
+  "affected_host": "app-server-1",
+  "first_occurrence": "2026-10-10T15:54:12.845673+00:00",
+  "last_occurrence": "2026-10-10T15:54:12.845673+00:00",
+  "occurrence_count": 1,
+  "environment": {
+    "os": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+    "restic": "unknown",
+    "image": "backup-resilience-lab/agent:1.0"
+  },
+  "symptom": [
+    "Fatal: unable to open config file: Stat: The request signature we calculated does not match the signature you provided. Check your AWS secret access key and signing method. For more information, see REST Authentication and SOAP Authentication for details.\nIs there a repository at the following location?\ns3:http://minio:9000/backup-primary/app-server-1\n"
+  ],
+  "checks_performed": [
+    "env | grep -i aws",
+    "env | grep -i minio",
+    "mc alias list"
+  ],
+  "probable_cause": "Wrong S3 credentials for MinIO",
+  "recommended_fix": "Rotate or correct AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY",
+  "escalation_route": "Support L1 - auth runbook",
+  "status": "open",
+  "customer_update": "We detected 1 occurrence(s) of Wrong S3 credentials for MinIO on app-server-1. Our team is applying the documented fix and will confirm the next successful backup. No action is needed from you right now.",
+  "source_log": "/tmp/f5.jsonl"
+}

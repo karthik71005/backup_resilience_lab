@@ -89,7 +89,7 @@ services:
       - labstate1:/var/lib/lab
       - ./config:/app/config:ro
     tmpfs:
-      - /cache:size=64m
+      - /cache:size=64m,mode=1777
     cap_add:
       - NET_ADMIN
     depends_on:
@@ -120,7 +120,7 @@ services:
       - labstate2:/var/lib/lab
       - ./config:/app/config:ro
     tmpfs:
-      - /cache:size=64m
+      - /cache:size=64m,mode=1777
     cap_add:
       - NET_ADMIN
     depends_on:

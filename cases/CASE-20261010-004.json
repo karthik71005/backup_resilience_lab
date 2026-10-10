@@ -1,0 +1,30 @@
+{
+  "id": "CASE-20261010-004",
+  "title": "PERMISSIONS: Agent (non-root labuser) cannot read data directory (PERMISSIONS)",
+  "severity": "P2",
+  "category": "permissions",
+  "rule_id": "PERMISSIONS",
+  "affected_host": "app-server-1",
+  "first_occurrence": "2026-10-10T15:51:21.374900+00:00",
+  "last_occurrence": "2026-10-10T15:51:21.374900+00:00",
+  "occurrence_count": 1,
+  "environment": {
+    "os": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+    "restic": "unknown",
+    "image": "backup-resilience-lab/agent:1.0"
+  },
+  "symptom": [
+    "{\"message_type\":\"error\",\"error\":{},\"during\":\"scan\",\"item\":\"/data/victim/finance\"}\n{\"message_type\":\"error\",\"error\":{},\"during\":\"archival\",\"item\":\"/data/victim/finance\"}\nWarning: at least one source file could not be read\n permission denied: victim/finance"
+  ],
+  "checks_performed": [
+    "ls -l /data/victim",
+    "namei -l /data/victim/finance",
+    "id labuser"
+  ],
+  "probable_cause": "Agent (non-root labuser) cannot read data directory",
+  "recommended_fix": "Fix mode/ownership (chmod/chown), then rerun backup",
+  "escalation_route": "Support L1 - self-resolve with runbook",
+  "status": "open",
+  "customer_update": "We detected 1 occurrence(s) of Agent (non-root labuser) cannot read data directory on app-server-1. Our team is applying the documented fix and will confirm the next successful backup. No action is needed from you right now.",
+  "source_log": "/tmp/f4.jsonl"
+}

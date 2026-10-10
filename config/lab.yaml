@@ -31,6 +31,7 @@ entropy_high: 7.5
 entropy_baseline_low: 7.0
 entropy_jump_min: 1.5
 anomaly_defer_score: 0.3
+min_cache_free_mb: 10
 
 # Simulator defaults
 sim_rate_files_per_sec: 15.0

@@ -1,0 +1,29 @@
+{
+  "id": "CASE-20261010-006",
+  "title": "AUTH: Wrong restic repository password (AUTH_REPO_PASSWORD)",
+  "severity": "P2",
+  "category": "auth",
+  "rule_id": "AUTH_REPO_PASSWORD",
+  "affected_host": "app-server-1",
+  "first_occurrence": "2026-10-10T15:54:54.785748+00:00",
+  "last_occurrence": "2026-10-10T15:54:54.785748+00:00",
+  "occurrence_count": 1,
+  "environment": {
+    "os": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+    "restic": "unknown",
+    "image": "backup-resilience-lab/agent:1.0"
+  },
+  "symptom": [
+    "Fatal: wrong password or no key found\n"
+  ],
+  "checks_performed": [
+    "env | grep RESTIC_PASSWORD",
+    "restic snapshots --json 2>&1 | head"
+  ],
+  "probable_cause": "Wrong restic repository password",
+  "recommended_fix": "Restore correct RESTIC_PASSWORD from vault/secret store",
+  "escalation_route": "Support L2 - secrets handling",
+  "status": "open",
+  "customer_update": "We detected 1 occurrence(s) of Wrong restic repository password on app-server-1. Our team is applying the documented fix and will confirm the next successful backup. No action is needed from you right now.",
+  "source_log": "/tmp/f6.jsonl"
+}

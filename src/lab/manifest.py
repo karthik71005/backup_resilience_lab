@@ -14,10 +14,21 @@ def sha256_file(p: Path, chunk: int = 65536) -> str:
     return h.hexdigest()
 
 def build_manifest(data_dir: str | Path):
+    import os
     root = Path(data_dir)
     entries = []
     total_bytes = 0
     for p in sorted(root.rglob("*")):
+        # rglob silently skips unreadable directories, so probe every dir
+        # explicitly (chmod 000 on a dir hides its whole subtree).
+        if p.is_dir() and not p.is_symlink():
+            try:
+                with os.scandir(p):
+                    pass
+            except (PermissionError, FileNotFoundError):
+                rel = str(p.relative_to(root))
+                entries.append({"path": rel, "size": 0, "sha256": "", "mtime": 0, "error": "permission_denied"})
+            continue
         if p.is_file() and not p.is_symlink():
             try:
                 st = p.stat()

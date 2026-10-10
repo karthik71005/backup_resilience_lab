@@ -82,9 +82,11 @@ def fault_inject(name: str):
     print(json.dumps(inject(name), indent=2, default=str))
 
 @fault_app.command("clear")
-def fault_clear(name: str = "all"):
+def fault_clear(name: Optional[str] = typer.Argument("all"),
+                all: bool = typer.Option(False, "--all", help="Clear all faults")):
     from .faults import clear
-    print(json.dumps(clear(name), indent=2, default=str))
+    target = "all" if (all or name in ("all", "--all")) else name
+    print(json.dumps(clear(target), indent=2, default=str))
 
 @triage_app.command("analyze")
 def triage_analyze(logfile: str, since: Optional[str] = None):

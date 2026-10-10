@@ -4,7 +4,7 @@ def test_all_fault_categories():
     rules = load_rules("config/triage_rules.yaml")
     cases = [
         ("fallocate: /cache/fill: No space left on device", "storage"),
-        ("lookup minio on 192.0.2.1:53: no such host", "dns"),
+        ("lookup minio on 127.0.0.11:53: server misbehaving", "dns"),
         ("dial tcp 172.18.0.3:9000: connect: i/o timeout", "network"),
         ("open /data/victim/finance/ledger.csv: permission denied", "permissions"),
         ("AccessDenied: Access Denied", "auth"),

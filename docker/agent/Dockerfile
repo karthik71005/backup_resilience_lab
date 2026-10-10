@@ -10,7 +10,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN useradd -m -s /bin/bash labuser && \
     mkdir -p /data /data/victim /var/log/lab /var/lib/lab /restore /cache /app && \
-    chown -R labuser:labuser /data /var/log/lab /var/lib/lab /restore /cache /app
+    chown -R labuser:labuser /data /var/log/lab /var/lib/lab /restore /cache /app && \
+    echo "labuser ALL=(root) NOPASSWD: /usr/sbin/iptables, /sbin/iptables" > /etc/sudoers.d/labuser-iptables && \
+    chmod 0440 /etc/sudoers.d/labuser-iptables && visudo -c
 
 WORKDIR /app
 COPY requirements.txt /app/requirements.txt
