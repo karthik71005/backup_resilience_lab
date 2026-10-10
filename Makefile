@@ -1,8 +1,14 @@
 .PHONY: up down logs seed attack restore fault clear test demo ps build
 
+# NOTE (WSL): if `make build` fails with "error getting credentials", run:
+#   mkdir -p /tmp/dockercfg && echo '{}' > /tmp/dockercfg/config.json
+#   DOCKER_CONFIG=/tmp/dockercfg docker compose build
+# (Docker Desktop's credsStore helper is flaky inside WSL; empty config
+# suffices for public pulls.)
+
 up:
-	docker compose --env-file .env up -d --build
-	@echo "Waiting for minio health..."
+	docker compose --env-file .env up -d
+	@echo "Waiting for storage health..."
 	@for i in 1 2 3 4 5 6 7 8 9 10 11 12; do curl -sf http://localhost:9000/minio/health/live && break || sleep 5; done
 	docker compose ps
 
@@ -35,7 +41,7 @@ clear:
 	docker compose exec app-server-1 python3 -m lab.cli fault clear --all
 
 test:
-	python3 -m pytest tests/ -v
+	PYTHONPATH=src python3 -m pytest tests/ -v
 
 demo:
 	bash scripts/demo.sh

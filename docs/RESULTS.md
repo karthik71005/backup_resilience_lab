@@ -1,5 +1,8 @@
 # Recovery results (spec Section 9) — every row from an actual run. Do not fabricate.
 
+Summary over 5 runs (app-server-1, 301 files each): detection latency median
+9.88 s (6.62–10.23), RPO 12.6–23.3 s, RTO 1.24–2.43 s, success 100% every run.
+
 | Date (UTC) | Commit | Host | Detection latency (s) | RPO (s) | RTO (s) | Success % | Notes |
 |---|---|---|---|---|---|---|---|
 | 2026-10-09T17:52:35Z | 4edbab0 | app-server-1 | 9.95 | 23.26 | 1.48 | 100.0 | run 1: attack 17:44:52.498Z, detected 17:45:02.448Z (score 0.60), restored snap 9d33de18 (taken 17:44:29Z, 301 files) |
