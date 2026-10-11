@@ -65,24 +65,40 @@ Plus: [docs/RUNBOOK.md](docs/RUNBOOK.md), 7 write-ups in [docs/incidents/](docs/
 detector run/tune | restore --latest-clean --host H | fault inject/clear |
 triage analyze <log> | case create/list/show | exporter`
 
-## Demo console (simple frontend, :8080)
+## Demo Console & Live Monitored Frontend (:8090)
+
+The lab includes a modern, live-monitored React + FastAPI operations dashboard (`dashboard/frontend/` and `dashboard/api.py`).
+
+### Quick Start:
 
 ```bash
-make dashboard   # open http://localhost:8090 in a Windows browser
+# 1. Install Python requirements & build frontend:
+pip install -r requirements.txt
+make frontend-build    # builds React app into dashboard/frontend/dist
+
+# 2. Start the dashboard backend (serves frontend + API at port 8090):
+make dashboard         # or: python3 dashboard/api.py --port 8090
 ```
 
-One page that walks the whole data flow with buttons + live status
-(detector score, paused flag, clean/suspect counts, last RTO):
+Open **`http://localhost:8090`** in any browser.
 
-1. **Give a file** — uploads your file into `/data/victim` on app-server-1
-2. **Backup now** — restic snapshot + manifest (your file is in it)
-3. **Vault proof** — status + forced `try-delete` (refused = immutable)
-4. **Ransomware attack** — encrypts everything, watch the score cross the
-   threshold and backups pause
-5. **Restore + verify** — newest clean snapshot, hash-checked, RPO/RTO shown
-6. **Fault injection** — all 7 faults, one click each
-7. **Triage** — classifies recent failures into rule/severity/fix
+For frontend development with live hot-reloading:
+```bash
+cd dashboard/frontend
+npm run dev            # runs on http://localhost:3001 (proxies /api to :8090)
+```
 
-Stdlib-only backend (`dashboard/app.py`, no new dependencies); it drives
-the lab through `docker compose exec` + host triage. Grafana (:3000)
-remains the metrics-only view.
+### Dashboard Workflow & Features:
+
+1. **Live System Health**: Real-time polling every 5s covering RustFS S3, App Servers, Vault, Detector, Prometheus (:9090), and Grafana (:3000). Visual status badges (`HEALTHY`, `DEGRADED`, `OFFLINE`).
+2. **Offline Handling**: If the backend is stopped or unreachable, the UI gracefully renders an offline status card with timestamps and copyable WSL commands (`docker compose ps`, `python dashboard/api.py`).
+3. **Protect a File**: Drag-and-drop sample upload to `/data/victim` with client + server SHA-256 fingerprinting, backup snapshot generation, and catalog tracking.
+4. **Monitoring & Watchdog**: Live entropy score meter vs threshold (0.55), alert status, backup circuit-breaker status, and resume control.
+5. **Guarded Attack Simulation**: Controlled ransomware simulation with pre-flight checks (refuses to run unless a clean backup exists). Distinguishes simulation completion from actual detector trigger.
+6. **Recovery & Verification**: Restores the latest clean snapshot into `/data/restore`, executes cryptographic SHA-256 manifest verification, and validates sample fingerprints.
+7. **System Diagnostics**: Deep multi-check inspection returning Pass/Fail, observed behavior, likely cause, and recommended action.
+8. **Activity Timeline**: Chronological event stream tracking real backup, attack, restore, and health events.
+9. **Safe Service Recovery**: Allowlisted service restart with confirmation modal (`minio`, `app-server-1`, `app-server-2`, `prometheus`, `grafana`).
+
+Legacy minimal console remains available via: `make dashboard-legacy`.
+

@@ -1,8 +1,16 @@
-.PHONY: up down logs seed attack restore fault clear test demo ps build dashboard
+.PHONY: up down logs seed attack restore fault clear test demo ps build dashboard dashboard-api frontend-build
 
 dashboard:
-	@echo "Demo console at http://localhost:8090 (Ctrl-C to stop)"
+	@echo "Demo console (FastAPI + React) at http://localhost:8090 (Ctrl-C to stop)"
+	python3 dashboard/api.py --port 8090
+
+dashboard-legacy:
+	@echo "Legacy stdlib console at http://localhost:8090 (Ctrl-C to stop)"
 	python3 dashboard/app.py 8090
+
+frontend-build:
+	cd dashboard/frontend && npm run build
+
 
 # NOTE (WSL): if `make build` fails with "error getting credentials", run:
 #   mkdir -p /tmp/dockercfg && echo '{}' > /tmp/dockercfg/config.json
