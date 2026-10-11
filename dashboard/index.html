@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Backup Resilience Lab — Demo Console</title>
+<style>
+  body { font-family: system-ui, sans-serif; background: #0f1420; color: #e6e9f0; margin: 0; padding: 16px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: #9aa3b2; font-size: 13px; margin-bottom: 12px; }
+  #status { display: flex; gap: 10px; flex-wrap: wrap; background: #171e2e; border: 1px solid #2a3550;
+            border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; font-size: 13px; }
+  .stat b { color: #7dd3a8; }
+  .stat.warn b { color: #f0b429; }
+  .flow { background: #171e2e; border: 1px solid #2a3550; border-radius: 8px; padding: 12px;
+          font-family: monospace; font-size: 12px; white-space: pre; overflow-x: auto; margin-bottom: 14px; color: #a9c1ff; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 12px; }
+  .card { background: #171e2e; border: 1px solid #2a3550; border-radius: 8px; padding: 12px; }
+  .card h2 { font-size: 14px; margin: 0 0 6px; }
+  .card p { font-size: 12px; color: #9aa3b2; margin: 0 0 8px; }
+  input[type=file] { font-size: 12px; color: #9aa3b2; margin-bottom: 6px; }
+  button, select { background: #2b6cb0; color: #fff; border: 0; border-radius: 6px;
+                   padding: 7px 12px; font-size: 13px; cursor: pointer; margin: 2px 4px 2px 0; }
+  button:hover { background: #2c5282; }
+  button.danger { background: #9b2c2c; }
+  button:disabled { opacity: .5; cursor: wait; }
+  pre { background: #0b0f18; border: 1px solid #2a3550; border-radius: 6px; padding: 8px;
+        font-size: 11px; max-height: 220px; overflow: auto; white-space: pre-wrap; }
+  table { font-size: 12px; border-collapse: collapse; width: 100%; }
+  td, th { border: 1px solid #2a3550; padding: 4px 6px; text-align: left; }
+</style>
+</head>
+<body>
+<h1>Backup Resilience Lab — Demo Console</h1>
+<div class="sub">Give a file → back it up → lock it in the vault → attack → detect → restore → triage. (Grafana: :3000, Prometheus: :9090)</div>
+
+<div id="status">loading status…</div>
+
+<div class="flow">your file ──▶ /data/victim ──▶ [1 BACKUP: restic + manifest] ──▶ backup-primary ──▶ mirror ──▶ backup-vault (GOVERNANCE lock)
+                                                        │
+[4 ATTACK: AES-CTR + rename] ──▶ inotify ──▶ [2 DETECT: score] ──▶ alert ──▶ pause backups, mark suspect
+                                                                                        │
+[5 RESTORE latest clean] ◀── snapshots.db ──▶ verify SHA-256 ──▶ RTO/RPO ──▶ [6 backup resume]
+[7 FAULT] ──▶ failure logs ──▶ [TRIAGE rules] ──▶ support case</div>
+
+<div class="grid">
+  <div class="card"><h2>1 · Give a file</h2>
+    <p>Stages your file into <code>/data/victim</code> on app-server-1.</p>
+    <input type="file" id="file"><button onclick="upload()">Upload</button>
+    <pre id="o-upload">—</pre></div>
+
+  <div class="card"><h2>2 · Backup now</h2>
+    <p>restic snapshot + SHA-256 manifest + clean row in SQLite.</p>
+    <button onclick="call('/api/backup','o-backup',this)">Backup now</button>
+    <pre id="o-backup">—</pre></div>
+
+  <div class="card"><h2>3 · Vault proof</h2>
+    <p>Versioned + GOVERNANCE-locked mirror. Delete must be refused.</p>
+    <button onclick="call('/api/vault','o-vault',this,null,'GET')">Vault status + try-delete</button>
+    <pre id="o-vault">—</pre></div>
+
+  <div class="card"><h2>4 · Ransomware attack</h2>
+    <p>AES-CTR encrypt + rename at 15 files/s (~25 s). Watch the score jump above.</p>
+    <button class="danger" onclick="call('/api/attack','o-attack',this)">Run attack</button>
+    <pre id="o-attack">—</pre></div>
+
+  <div class="card"><h2>5 · Restore latest clean</h2>
+    <p>Restores newest <code>clean</code> snapshot, verifies every hash, prints RTO/RPO.</p>
+    <button onclick="call('/api/restore','o-restore',this)">Restore + verify</button>
+    <button onclick="call('/api/resume','o-restore',this)">Resume backups</button>
+    <pre id="o-restore">—</pre></div>
+
+  <div class="card"><h2>6 · Fault injection</h2>
+    <p>Break something, then triage it. dns/service use host steps automatically.</p>
+    <select id="fault">
+      <option>disk_full</option><option>dns_failure</option><option>port_blocked</option>
+      <option>permission_denied</option><option>bad_credentials</option>
+      <option>wrong_repo_password</option><option>service_down</option>
+    </select>
+    <button class="danger" onclick="fault()">Inject + fail a backup</button>
+    <button onclick="call('/api/clear','o-fault',this)">Clear all</button>
+    <pre id="o-fault">—</pre></div>
+
+  <div class="card"><h2>7 · Triage the failure log</h2>
+    <p>Classifies recent backup failures into rule → severity → fix.</p>
+    <button onclick="triage()">Analyze logs</button>
+    <div id="o-triage">—</div></div>
+</div>
+
+<script>
+async function refresh() {
+  try {
+    const r = await fetch('/api/overview').then(r => r.json());
+    if (!r.ok) return;
+    const o = r.overview, el = document.getElementById('status');
+    const age = o.last_success ? Math.max(0, Math.round(Date.now()/1000 - o.last_success)) : '?';
+    el.innerHTML =
+      `<span class="stat">detector score <b>${o.score ?? '?'}</b></span>` +
+      `<span class="stat ${o.paused ? 'warn' : ''}">backups paused <b>${o.paused ? 'YES' : 'no'}</b></span>` +
+      `<span class="stat">alerts <b>${JSON.stringify(o.alerts)}</b></span>` +
+      `<span class="stat">snapshots <b>${o.clean ?? '?'} clean / ${o.suspect ?? '?'} suspect</b></span>` +
+      `<span class="stat">last backup <b>${age}s ago</b></span>` +
+      `<span class="stat">last RTO <b>${o.rto ?? '?'}s</b></span>` +
+      `<span class="stat">victim entries <b>${o.victim_entries}</b></span>`;
+    if (o.snapshots && o.snapshots.length) {
+      let h = '<table><tr><th>snapshot</th><th>taken</th><th>status</th><th>files</th></tr>';
+      for (const s of o.snapshots.slice(0, 8))
+        h += `<tr><td>${s.id}</td><td>${s.taken_at.slice(11,19)}</td><td>${s.status}</td><td>${s.files}</td></tr>`;
+      document.getElementById('o-snaps') && (document.getElementById('o-snaps').innerHTML = h + '</table>');
+    }
+  } catch (e) { /* next tick */ }
+}
+async function call(url, out, btn, body, method) {
+  btn && (btn.disabled = true);
+  document.getElementById(out).textContent = 'working…';
+  try {
+    const r = await fetch(url, {method: method || 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: body ? JSON.stringify(body) : '{}'}).then(r => r.json());
+    document.getElementById(out).textContent =
+      (r.output || r.status || r.try_delete || JSON.stringify(r, null, 1) || '').slice(0, 4000);
+  } catch (e) { document.getElementById(out).textContent = 'error: ' + e; }
+  btn && (btn.disabled = false); refresh();
+}
+async function upload() {
+  const f = document.getElementById('file').files[0];
+  if (!f) { document.getElementById('o-upload').textContent = 'pick a file first'; return; }
+  const fd = new FormData(); fd.append('file', f);
+  document.getElementById('o-upload').textContent = 'uploading…';
+  try {
+    const r = await fetch('/api/upload', {method: 'POST', body: fd}).then(r => r.json());
+    document.getElementById('o-upload').textContent = JSON.stringify(r, null, 1);
+  } catch (e) { document.getElementById('o-upload').textContent = 'error: ' + e; }
+  refresh();
+}
+async function fault() {
+  await call('/api/fault', 'o-fault', null, {name: document.getElementById('fault').value});
+}
+async function triage() {
+  const box = document.getElementById('o-triage'); box.textContent = 'analyzing…';
+  try {
+    const r = await fetch('/api/triage', {method: 'POST'}).then(r => r.json());
+    if (!r.ok) { box.textContent = JSON.stringify(r); return; }
+    let h = `<div style="font-size:12px;margin-bottom:4px">${r.failures} failures</div><table><tr><th>rule</th><th>category</th><th>sev</th><th>count</th><th>fix</th></tr>`;
+    for (const [id, g] of Object.entries(r.groups))
+      h += `<tr><td>${id}</td><td>${g.category}</td><td>${g.severity}</td><td>${g.count}</td><td>${g.fix}</td></tr>`;
+    box.innerHTML = h + '</table>';
+  } catch (e) { box.textContent = 'error: ' + e; }
+  refresh();
+}
+setInterval(refresh, 3000); refresh();
+</script>
+</body>
+</html>

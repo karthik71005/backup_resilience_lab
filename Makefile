@@ -1,4 +1,8 @@
-.PHONY: up down logs seed attack restore fault clear test demo ps build
+.PHONY: up down logs seed attack restore fault clear test demo ps build dashboard
+
+dashboard:
+	@echo "Demo console at http://localhost:8080 (Ctrl-C to stop)"
+	python3 dashboard/app.py 8080
 
 # NOTE (WSL): if `make build` fails with "error getting credentials", run:
 #   mkdir -p /tmp/dockercfg && echo '{}' > /tmp/dockercfg/config.json

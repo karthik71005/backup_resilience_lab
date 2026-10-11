@@ -64,3 +64,25 @@ Plus: [docs/RUNBOOK.md](docs/RUNBOOK.md), 7 write-ups in [docs/incidents/](docs/
 `lab seed | backup run/loop | vault status/try-delete | attack run |
 detector run/tune | restore --latest-clean --host H | fault inject/clear |
 triage analyze <log> | case create/list/show | exporter`
+
+## Demo console (simple frontend, :8080)
+
+```bash
+make dashboard   # open http://localhost:8080 in a Windows browser
+```
+
+One page that walks the whole data flow with buttons + live status
+(detector score, paused flag, clean/suspect counts, last RTO):
+
+1. **Give a file** — uploads your file into `/data/victim` on app-server-1
+2. **Backup now** — restic snapshot + manifest (your file is in it)
+3. **Vault proof** — status + forced `try-delete` (refused = immutable)
+4. **Ransomware attack** — encrypts everything, watch the score cross the
+   threshold and backups pause
+5. **Restore + verify** — newest clean snapshot, hash-checked, RPO/RTO shown
+6. **Fault injection** — all 7 faults, one click each
+7. **Triage** — classifies recent failures into rule/severity/fix
+
+Stdlib-only backend (`dashboard/app.py`, no new dependencies); it drives
+the lab through `docker compose exec` + host triage. Grafana (:3000)
+remains the metrics-only view.

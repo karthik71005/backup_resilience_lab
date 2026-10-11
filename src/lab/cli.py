@@ -61,6 +61,16 @@ def backup_resume():
         pass
     print("backups resumed")
 
+@app.command()
+def snapshots(host: Optional[str] = None, limit: int = 20):
+    """List recent snapshots for a host (newest first)."""
+    cfg = load_config()
+    from . import state as st
+    rows = st.list_snapshots(cfg.state_db, host or cfg.host)
+    rows = sorted(rows, key=lambda r: r.get("taken_at", ""), reverse=True)[:limit]
+    print(json.dumps([{"id": r["id"][:8], "taken_at": r["taken_at"], "status": r["status"],
+                       "files": r["files"], "bytes": r["bytes"]} for r in rows], indent=2))
+
 @vault_app.command("status")
 def vault_status():
     from .vault import vault_status as vs
