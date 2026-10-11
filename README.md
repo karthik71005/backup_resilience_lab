@@ -68,7 +68,7 @@ triage analyze <log> | case create/list/show | exporter`
 ## Demo console (simple frontend, :8080)
 
 ```bash
-make dashboard   # open http://localhost:8080 in a Windows browser
+make dashboard   # open http://localhost:8090 in a Windows browser
 ```
 
 One page that walks the whole data flow with buttons + live status

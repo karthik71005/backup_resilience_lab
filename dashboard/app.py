@@ -237,7 +237,7 @@ class H(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8090
     srv = ThreadingHTTPServer(("0.0.0.0", port), H)
     print(f"[dashboard] http://localhost:{port}  (repo: {REPO})")
     srv.serve_forever()

@@ -249,7 +249,7 @@ docker compose exec app-server-1 python3 -m lab.cli detector tune
 
 ```bash
 make demo       # runs sections 8–12 end to end (~5 min, CLI)
-make dashboard  # simple frontend at http://localhost:8080 (see below)
+make dashboard  # simple frontend at http://localhost:8090 (see below)
 make test       # 15 unit tests
 make ps         # container status
 make logs       # follow all logs
@@ -259,7 +259,7 @@ make down       # stop everything (volumes keep your data)
 ### Demo console (:8080)
 
 Prefer clicking over typing? `make dashboard`, open
-http://localhost:8080 in a Windows browser. One page, same data flow:
+http://localhost:8090 in a Windows browser. One page, same data flow:
 
 1. **Give a file** — pick any file, it lands in `/data/victim`.
 2. **Backup now** — snapshot includes your file (count goes 301 → 302).
