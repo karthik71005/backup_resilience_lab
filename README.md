@@ -95,7 +95,7 @@ npm run dev            # runs on http://localhost:3001 (proxies /api to :8090)
 3. **Protect a File**: Drag-and-drop sample upload to `/data/victim` with client + server SHA-256 fingerprinting, backup snapshot generation, and catalog tracking.
 4. **Monitoring & Watchdog**: Live entropy score meter vs threshold (0.55), alert status, backup circuit-breaker status, and resume control.
 5. **Guarded Attack Simulation**: Controlled ransomware simulation with pre-flight checks (refuses to run unless a clean backup exists). Distinguishes simulation completion from actual detector trigger.
-6. **Recovery & Verification**: Restores the latest clean snapshot into `/data/restore`, executes cryptographic SHA-256 manifest verification, and validates sample fingerprints.
+6. **Recovery & Verification**: Restores the latest clean snapshot into `/restore/<run_id>`, executes cryptographic SHA-256 manifest verification, and validates sample fingerprints.
 7. **System Diagnostics**: Deep multi-check inspection returning Pass/Fail, observed behavior, likely cause, and recommended action.
 8. **Activity Timeline**: Chronological event stream tracking real backup, attack, restore, and health events.
 9. **Safe Service Recovery**: Allowlisted service restart with confirmation modal (`minio`, `app-server-1`, `app-server-2`, `prometheus`, `grafana`).

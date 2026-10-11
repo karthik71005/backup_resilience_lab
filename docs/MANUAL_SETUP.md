@@ -249,29 +249,44 @@ docker compose exec app-server-1 python3 -m lab.cli detector tune
 
 ```bash
 make demo       # runs sections 8–12 end to end (~5 min, CLI)
-make dashboard  # simple frontend at http://localhost:8090 (see below)
-make test       # 15 unit tests
+make dashboard  # FastAPI + React console at http://localhost:8090 (see below)
+make test       # 25 unit tests (lab + API)
 make ps         # container status
 make logs       # follow all logs
 make down       # stop everything (volumes keep your data)
 ```
 
-### Demo console (:8080)
+### Demo console — FastAPI backend + React frontend (:8090)
 
 Prefer clicking over typing? `make dashboard`, open
-http://localhost:8090 in a Windows browser. One page, same data flow:
+http://localhost:8090 in a Windows browser. Full operations console:
 
-1. **Give a file** — pick any file, it lands in `/data/victim`.
-2. **Backup now** — snapshot includes your file (count goes 301 → 302).
-3. **Vault proof** — try-delete refused live.
-4. **Attack** — ~25 s; watch detector score cross threshold and
-   `backups paused: YES` in the status bar.
-5. **Restore + verify** — 100% hash check incl. your file, RPO/RTO shown.
-6. **Fault injection** — dropdown with all 7 faults.
-7. **Triage** — rule/severity/fix table for recent failures.
+- **Health** — 9 services with per-service status, latency, and Docker state
+- **Give a file** — pick any file, it lands in `/data/victim` with a SHA-256 fingerprint
+- **Protect** — backup + manifest proof your file is inside the new snapshot (refuses honestly if backups are paused)
+- **Vault proof** — status + try-delete refused live (immutability)
+- **Attack** — guarded simulation with pre-checks (~25 s); detection via alerts counter, not the decaying gauge
+- **Restore + verify** — 100% hash check incl. your file, RPO/RTO shown
+- **Fault injection** — all 7 faults + clear-all (dns/service host steps handled automatically)
+- **Triage + Timeline + Diagnostics** — rule/severity/fix table, chronological event log, service restart (allowlisted, confirm-gated)
 
-Status bar refreshes every 3 s. After the attack segment, press
-**Resume backups** (or `lab backup resume`) to unpause.
+API docs (Swagger): http://localhost:8090/docs
+
+**Fresh clone?** The built frontend (`dashboard/frontend/dist/`) is
+git-ignored, so build it once before `make dashboard`:
+
+```bash
+cd dashboard/frontend && npm ci && npm run build && cd ../..
+```
+
+For frontend development with hot reload instead:
+
+```bash
+cd dashboard/frontend && npm ci && npm run dev   # :3001, proxies /api → :8090
+```
+
+Legacy stdlib console still available: `make dashboard-legacy`.
+Requires Node 18+ in WSL (no sudo needed — a `~/node` tarball works).
 
 From Windows PowerShell (thin wrapper): `.\lab.ps1 up`,
 `.\lab.ps1 test`, etc.
