@@ -53,6 +53,28 @@ NET = "backup-resilience-lab_lab-net"
 LONG_TIMEOUT = 300
 MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50 MB
 
+
+def _ctr_name() -> str:
+    """Resolve the app-server-1 container (ID or name) instead of trusting
+    the hardcoded default, which breaks on renamed compose projects."""
+    rc, out = run(["docker", "compose", "ps", "-q", "app-server-1"], timeout=30)
+    if rc == 0:
+        for line in out.splitlines():
+            cid = line.strip()
+            if len(cid) >= 12:
+                return cid
+    return CTR
+
+
+def _net_name() -> str:
+    """Resolve the lab-net network name dynamically with fallback."""
+    rc, out = run(["docker", "network", "ls", "--format", "{{.Name}}"], timeout=30)
+    if rc == 0:
+        for line in out.splitlines():
+            if "lab-net" in line:
+                return line.strip()
+    return NET
+
 # Allowed services for restart
 ALLOWED_SERVICES = {
     "minio", "app-server-1", "app-server-2",
@@ -802,7 +824,7 @@ async def upload_file(file: UploadFile = File(...)):
         with open(tmp, "wb") as f:
             f.write(content)
         rc, out = run(["docker", "cp", tmp,
-                       CTR + ":/data/victim/" + safe_name], timeout=60)
+                       _ctr_name() + ":/data/victim/" + safe_name], timeout=60)
     finally:
         if os.path.exists(tmp):
             os.unlink(tmp)
@@ -836,9 +858,40 @@ async def upload_file(file: UploadFile = File(...)):
     }
 
 
+def _alerts_total() -> float:
+    """Summed lab_alerts_total across hosts (persistent counter)."""
+    try:
+        return sum(float(v) for v in prom_query("lab_alerts_total").values())
+    except Exception:
+        return 0.0
+
+
+def _manifest_paths(snapshot_id: str, host: str = "app-server-1") -> set | None:
+    """Download a snapshot manifest from object storage (host-side).
+    Returns the set of relative paths, or None when unreachable."""
+    try:
+        import boto3
+        s3 = boto3.client(
+            "s3", endpoint_url="http://localhost:9000",
+            aws_access_key_id=os.environ.get("MINIO_ROOT_USER", "minioadmin"),
+            aws_secret_access_key=os.environ.get("MINIO_ROOT_PASSWORD", "minioadmin123"))
+        obj = s3.get_object(Bucket="backup-primary",
+                            Key=f"manifests/{host}/{snapshot_id}.json")
+        man = json.loads(obj["Body"].read())
+        return {e.get("path") for e in man.get("files", [])}
+    except Exception:
+        return None
+
+
 @app.post("/api/protect")
 async def protect_file():
-    """Run backup and verify the file is protected in a snapshot."""
+    """Run backup and verify each staged file is inside the new snapshot.
+
+    Honesty rules (Oct 2026 fix): a skipped/failed backup is NOT protection
+    (previous code fell back to whatever snapshot was latest, even one that
+    predates the upload). Files are marked protected only when their
+    manifest path appears in the fresh snapshot's manifest.
+    """
     global _current_operation
     with _operation_lock:
         if _current_operation:
@@ -848,54 +901,64 @@ async def protect_file():
     try:
         _add_event("backup", "Protection backup started", "info")
 
-        # Run backup
+        # Run backup — must produce a FRESH snapshot; anything else is not protection.
         rc, out = cexec("backup", "run", timeout=LONG_TIMEOUT)
-        if rc != 0:
-            _add_event("backup", f"Backup failed: {out[:200]}", "error")
-            return {"ok": False, "step": "backup", "output": out[-4000:]}
-
-        # Parse snapshot ID from output
-        snapshot_id = None
+        backup_result = None
         try:
             backup_result = json.loads(out)
-            snapshot_id = backup_result.get("snapshot_id")
         except Exception:
-            # Try to find snapshot_id in text output
             for line in out.splitlines():
                 try:
                     obj = json.loads(line)
-                    if "snapshot_id" in obj:
-                        snapshot_id = obj["snapshot_id"]
+                    if "snapshot_id" in obj or "skipped" in obj:
+                        backup_result = obj
+                        break
                 except Exception:
                     continue
+        snapshot_id = (backup_result or {}).get("snapshot_id")
+        if rc != 0 or not snapshot_id:
+            reason = "backup did not produce a snapshot"
+            if (backup_result or {}).get("skipped"):
+                reason = ("backup skipped (scheduled backups are paused after an alert, "
+                          "or the detector score is elevated) — resume and retry, files NOT protected")
+            _add_event("backup", f"Protection refused: {reason}", "error")
+            return {"ok": False, "step": "backup", "reason": reason,
+                    "output": out[-4000:]}
 
-        # Get latest snapshot to confirm
-        rc2, snap_out = cexec("snapshots", "--host", "app-server-1", "--limit", "1")
-        latest_snap = None
-        try:
-            snaps = json.loads(snap_out)
-            if snaps:
-                latest_snap = snaps[0]
-        except Exception:
-            pass
-
-        # Update protected files
+        # Verify each staged file against the fresh snapshot manifest.
+        paths = _manifest_paths(snapshot_id)
+        if paths is None:
+            _add_event("backup", "Protection unverified: manifest unreachable", "error")
+            return {"ok": False, "step": "verify",
+                    "reason": "could not download snapshot manifest",
+                    "snapshot_id": snapshot_id}
+        verified, missing = [], []
         with _protected_lock:
-            for name, info in _protected_files.items():
-                if not info["protected"]:
-                    info["protected"] = True
-                    info["backup_snapshot"] = snapshot_id or (latest_snap["id"] if latest_snap else None)
-                    info["protected_at"] = datetime.now(timezone.utc).isoformat()
+            pending = [(n, i) for n, i in _protected_files.items() if not i["protected"]]
+        for name, info in pending:
+            if ("victim/" + name) in paths:
+                info["protected"] = True
+                info["verified"] = True
+                info["backup_snapshot"] = snapshot_id
+                info["protected_at"] = datetime.now(timezone.utc).isoformat()
+                verified.append(name)
+            else:
+                missing.append(name)
+        if missing:
+            _add_event("backup", f"Snapshot {snapshot_id[:8]} missing staged files: {missing}", "error")
+            return {"ok": False, "step": "verify", "snapshot_id": snapshot_id,
+                    "verified": verified,
+                    "reason": f"not in snapshot {snapshot_id[:8]}: {missing}"}
 
         _add_event("backup",
-                   f"Backup completed: snapshot {(snapshot_id or '?')[:8]}",
+                   f"Backup completed and verified: snapshot {snapshot_id[:8]} covers {verified}",
                    "success",
-                   {"snapshot_id": snapshot_id, "latest": latest_snap})
+                   {"snapshot_id": snapshot_id})
 
         return {
             "ok": True,
             "snapshot_id": snapshot_id,
-            "latest_snapshot": latest_snap,
+            "verified": verified,
             "output": out[-3000:],
         }
     finally:
@@ -971,6 +1034,7 @@ async def run_attack():
 
         _add_event("attack", "Ransomware simulation started (lab-only, guarded)", "warning")
 
+        pre_alerts = _alerts_total()
         rc, out = cexec("attack", "run", "--rate", "15", timeout=LONG_TIMEOUT)
 
         # Parse attack result
@@ -986,11 +1050,16 @@ async def run_attack():
                 except Exception:
                     continue
 
-        # Check detector status after attack
+        # Check detector status after attack. NOTE (Oct 2026 fix): the live
+        # score gauge decays ~10s after the burst, so a late read reports
+        # detected:false for a caught attack. Ground truth is the persistent
+        # alerts counter delta (plus the gauge when still hot).
         m = metrics_text()
         post_score = gauge(m, "lab_detector_score", 'host="app-server-1"')
         post_paused = gauge(m, "lab_backups_paused", 'host="app-server-1"')
         post_alerts = prom_query("lab_alerts_total")
+        fired = _alerts_total() > pre_alerts
+        detected = fired or (post_score is not None and post_score >= 0.55)
 
         _add_event("attack",
                    f"Simulation complete: {attack_result.get('files', '?') if attack_result else '?'} files encrypted",
@@ -1009,7 +1078,8 @@ async def run_attack():
             "attack_result": attack_result,
             "post_attack": {
                 "detector_score": post_score,
-                "detected": post_score is not None and post_score >= 0.55,
+                "alert_fired": fired,
+                "detected": detected,
                 "backups_paused": bool(post_paused),
                 "alerts": post_alerts,
             },
@@ -1139,7 +1209,7 @@ async def inject_fault(body: FaultRequest):
     rc, out = cexec("fault", "inject", body.name, timeout=60)
     extra = ""
     if body.name == "dns_failure":
-        _, extra = run(["docker", "network", "disconnect", NET, CTR], timeout=60)
+        _, extra = run(["docker", "network", "disconnect", _net_name(), _ctr_name()], timeout=60)
     if body.name == "service_down":
         _, extra = run(["docker", "compose", "stop", "minio"], timeout=120)
     # Run one backup to materialize the failure
@@ -1160,7 +1230,7 @@ async def inject_fault(body: FaultRequest):
 async def clear_faults():
     """Clear all injected faults."""
     rc, out = cexec("fault", "clear", "--all", timeout=60)
-    run(["docker", "network", "connect", NET, CTR], timeout=60)
+    run(["docker", "network", "connect", _net_name(), _ctr_name()], timeout=60)
     run(["docker", "compose", "up", "-d", "minio"], timeout=180)
     _add_event("fault", "All faults cleared", "success")
     return {"ok": True, "output": out[-2000:]}
